@@ -1,0 +1,36 @@
+version: dev
+slug: supertonic
+name: Supertonic
+description: Lightweight multilingual text-to-speech (Supertonic, MNN backend)
+url: https://github.com/saya6k/ha-app-supertonic
+arch:
+  - amd64
+  - aarch64
+init: false
+discovery:
+  - wyoming
+backup_exclude:
+  - .cache/**
+options:
+  speed: 1
+  steps: 4
+  model_version: v3
+  warmup_voices:
+    - M1
+schema:
+  speed: float(0.5,2.0)
+  steps: int(1,30)
+  model_version: list(v2|v3)
+  warmup_voices:
+    - list(M1|M2|M3|M4|M5|F1|F2|F3|F4|F5)
+  threads: int(0,16)?
+  precision: list(auto|fp16|fp32|int8)?
+  mnn_memory: list(low|normal|high)?
+  text_normalization: bool?
+  no_streaming: bool?
+  debug_logging: bool?
+ports:
+  10209/tcp: null
+ports_description:
+  10209/tcp: Supertonic Wyoming Protocol
+homeassistant: 2023.8.0.dev20230718
