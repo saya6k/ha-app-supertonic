@@ -11,16 +11,14 @@ whole repo *is* the app. As of **2.0.0** the engine is
 [`supertonic-mnn`](https://github.com/vra/supertonic-mnn) (MNN). The 1.x
 ORT/OpenVINO stack is gone — see CHANGELOG before reintroducing any of it.
 
-## Git / repo tracking
+## Repo structure
 
-Part of the `ha-apps` monorepo — one git repo at the root, no per-app
-`.git` checkouts. Tracking is **stage-gated** by the root `.gitignore`:
-only `stage: stable` add-ons are committed; experimental ones are
-gitignored and stay local-only. Promote one by setting `stage: stable`
-in `config.yaml`, deleting its line from the root `.gitignore`, then
-`git add` it.
+Standalone repo — source, CI, and releases live here.
+`ha-apps` references the published GHCR image via `image: ghcr.io/saya6k/app-supertonic`.
 
-**This add-on:** tracked (`stage: stable`).
+**Stage:** stable (no `stage:` key in `config.yaml`).
+
+Release flow: push to `main` → release-drafter drafts the next patch version → publish the draft → `build.yml` pushes multi-arch GHCR images → `repository_dispatch` to ha-apps auto-updates `config.yaml`.
 
 ## Layout
 
@@ -39,7 +37,7 @@ translations/en.yaml + ko.yaml          option UI strings
 CHANGELOG.md / DOCS.md / README.md      user-facing docs (HA renders the first two)
 ```
 
-Follow the [Piper app](https://github.com/home-assistant/addons/tree/master/piper) (still in the legacy `addons` repo URL) for s6 / discovery / healthcheck conventions; deviate only with reason. We also delegate CI / build to [`hassio-addons/workflows`](https://github.com/hassio-addons/workflows) reusable workflows — `.github/workflows/{ci,deploy,lock,stale}.yaml` are thin callers; do not duplicate their logic locally.
+Follow the [Piper app](https://github.com/home-assistant/addons/tree/master/piper) for s6 / discovery / healthcheck conventions; deviate only with reason. CI and build workflows are self-contained in `.github/workflows/` — `ci.yml` (lint + build test), `build.yml` (GHCR publish on release), `release-drafter.yml` (version draft).
 
 ## Documentation layout
 
@@ -100,8 +98,9 @@ only when the client sends none. `__main__._build_info` advertises all
   publishes (and drop the apt install/purge of `git`).
 - Models cache under `/data/.cache/supertonic-mnn` because the s6 `run`
   script exports `HOME=/data`. `backup_exclude: [".cache/**"]`.
-- Bump version in all three on release: `config.yaml`, `pyproject.toml`,
-  `wyoming_supertonic/__init__.py`.
+- The release version lives in ha-apps (updated automatically by the sync workflow
+  when a GitHub release is published here). Only bump `pyproject.toml` and
+  `wyoming_supertonic/__init__.py` when the Python package version needs to change.
 
 ## Local development
 
