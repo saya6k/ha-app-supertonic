@@ -1,0 +1,57 @@
+---
+name: Upstream check
+
+# yamllint disable-line rule:truthy
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    name: Check vra/supertonic-mnn
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Get latest commit
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(gh api repos/vra/supertonic-mnn/commits/main --jq .sha)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Latest: $SHA"
+
+      - name: Open PR if changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.upstream.outputs.sha }}
+        run: |
+          set -euo pipefail
+          CURRENT=$(grep '^ARG SUPERTONIC_MNN_REF=' supertonic/Dockerfile | cut -d= -f2)
+          echo "Current: $CURRENT"
+          echo "Latest : $LATEST"
+          [ "$LATEST" = "$CURRENT" ] && echo "Up to date." && exit 0
+
+          BRANCH="upstream/supertonic-mnn-$(date +%Y%m%d)"
+          gh pr list --head "$BRANCH" --json number --jq 'length' \
+            | grep -qv '^0$' && echo "PR already open." && exit 0
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          sed -i "s|^ARG SUPERTONIC_MNN_REF=.*|ARG SUPERTONIC_MNN_REF=${LATEST}|" supertonic/Dockerfile
+          git add supertonic/Dockerfile
+          git commit -m "chore: bump supertonic-mnn ${CURRENT:0:12} → ${LATEST:0:12}"
+          git push origin "$BRANCH"
+          COMPARE="https://github.com/vra/supertonic-mnn/compare/${CURRENT:0:12}...${LATEST:0:12}"
+          gh pr create \
+            --base main --head "$BRANCH" \
+            --title "chore: bump supertonic-mnn ${CURRENT:0:12} → ${LATEST:0:12}" \
+            --body "$(printf '## Upstream update\n\nvra/supertonic-mnn: [%s...%s](%s)' "${CURRENT:0:12}" "${LATEST:0:12}" "$COMPARE")" \
+            --assignee saya6k
