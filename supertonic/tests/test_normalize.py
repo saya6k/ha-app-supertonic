@@ -3,6 +3,7 @@
 Requires langid + unicode-rbnf; run in the local uv venv without the MNN
 engine:  .venv/bin/python -m pytest tests/test_normalize.py
 """
+from wyoming_supertonic import normalize
 from wyoming_supertonic.normalize import TextNormalizer, detect_norm_lang
 
 
@@ -50,11 +51,20 @@ def test_version_string_untouched():
 
 
 def test_engine_cached_across_calls():
+    # The RBNF engine cache is module-level (shared across TextNormalizer
+    # instances so the per-language engines survive client connections),
+    # not an instance attribute.
+    normalize._rbnf_engines.clear()
+
     n = TextNormalizer()
     n.normalize("5", "en")
+    engine = normalize._rbnf_engines["en"]
+    assert engine is not None
+
     n.normalize("6", "en")
-    assert set(n._engines) == {"en"}
-    assert n._engines["en"] is not None
+    # Same object on the second call: the engine is built once, not per call.
+    assert normalize._rbnf_engines["en"] is engine
+    assert set(normalize._rbnf_engines) == {"en"}
 
 
 def _run_stream(chunks, lang="en"):

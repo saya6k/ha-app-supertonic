@@ -141,9 +141,16 @@ exact Python the addon ships with.
 
 ## Sanity checks before PR
 
-YAML lint, `shellcheck` the s6 scripts, `python3 -c "import ast; ast.parse(...)"`
-each `*.py`, build for one arch, smoke-test `echo '{"type":"describe"}' | nc -w 1 localhost 10209`
+`.venv/bin/python -m pytest tests/` (CI runs this too, on Python 3.13 to match
+`base-debian:trixie`), YAML lint, `shellcheck` the s6 scripts, build for one
+arch, smoke-test `echo '{"type":"describe"}' | nc -w 1 localhost 10209`
 returns `"Supertonic"`.
+
+Note the `build test` job only runs `docker build`: it installs our package
+with `--no-deps --no-compile` and never imports it, so it catches neither
+syntax nor import errors. The `pytest` job is what actually exercises the
+Python — it resolves deps from `pyproject.toml`, so the version floors there
+have to be real.
 
 ## Don'ts
 
