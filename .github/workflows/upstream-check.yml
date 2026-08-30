@@ -55,3 +55,55 @@ jobs:
             --title "chore: bump supertonic-mnn ${CURRENT:0:12} → ${LATEST:0:12}" \
             --body "$(printf '## Upstream update\n\nvra/supertonic-mnn: [%s...%s](%s)' "${CURRENT:0:12}" "${LATEST:0:12}" "$COMPARE")" \
             --assignee saya6k
+
+  check-wyoming:
+    name: Check OHF-Voice/wyoming
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Get latest 1.x release from PyPI
+        id: upstream
+        run: |
+          set -euo pipefail
+          # PyPI, not the GitHub release list: the Dockerfile pin is what pip
+          # resolves, so PyPI is the source of truth. Only 1.x finals are
+          # considered — pyproject caps wyoming at <2 and a major bump needs a
+          # human, so it must not arrive as an automated PR.
+          LATEST=$(curl -fsSL https://pypi.org/pypi/wyoming/json \
+            | jq -r '.releases | keys[] | select(test("^1\\.[0-9]+\\.[0-9]+$"))' \
+            | sort -V | tail -1)
+          [ -n "$LATEST" ] || { echo "Could not determine latest version." >&2; exit 1; }
+          echo "version=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "Latest 1.x: $LATEST"
+
+      - name: Open PR if changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST: ${{ steps.upstream.outputs.version }}
+        run: |
+          set -euo pipefail
+          CURRENT=$(sed -n 's/.*"wyoming==\([0-9.]*\)".*/\1/p' supertonic/Dockerfile)
+          echo "Current: $CURRENT"
+          echo "Latest : $LATEST"
+          [ "$LATEST" = "$CURRENT" ] && echo "Up to date." && exit 0
+
+          BRANCH="upstream/wyoming-$(date +%Y%m%d)"
+          gh pr list --head "$BRANCH" --json number --jq 'length' \
+            | grep -qv '^0$' && echo "PR already open." && exit 0
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          # Only the Dockerfile pin moves. The pyproject floor is a deliberate
+          # minimum (the oldest release whose API we rely on), not "latest",
+          # so raising it is a judgement call left to the reviewer.
+          sed -i "s|\"wyoming==${CURRENT}\"|\"wyoming==${LATEST}\"|" supertonic/Dockerfile
+          git add supertonic/Dockerfile
+          git commit -m "chore: bump wyoming ${CURRENT} → ${LATEST}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --base main --head "$BRANCH" \
+            --title "chore: bump wyoming ${CURRENT} → ${LATEST}" \
+            --body "$(printf '## Upstream update\n\nwyoming: **%s → %s**\n\n- [Release notes](https://github.com/OHF-Voice/wyoming/releases)\n- [Compare](https://github.com/OHF-Voice/wyoming/compare/v%s...v%s)\n\nOnly the Dockerfile pin was bumped. Check whether `pyproject.toml`'"'"'s `wyoming>=` floor should move too, and diff `wyoming/tts.py`, `server.py` and `event.py` for behaviour this app depends on.' "$CURRENT" "$LATEST" "$CURRENT" "$LATEST")" \
+            --assignee saya6k
