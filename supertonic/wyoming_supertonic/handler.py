@@ -192,7 +192,9 @@ class SupertonicEventHandler(AsyncEventHandler):
             _LOGGER.debug("Client disconnected")
             return False
         except Exception as err:
-            _LOGGER.exception("Synthesis error")
+            # This wraps the whole dispatch, not just synthesis — a failed
+            # Describe write reported itself as "Synthesis error" before.
+            _LOGGER.exception("Error handling %s event", event.type)
             try:
                 await self.write_event(
                     Error(text=str(err), code=err.__class__.__name__).event()

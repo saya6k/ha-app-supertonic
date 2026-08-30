@@ -1,7 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents working on this repository. Detailed history
-lives in `.agents/` — read that for the *why* behind older decisions.
+Guidance for AI coding agents working on this repository.
 
 ## What this repo is
 
@@ -9,7 +8,7 @@ A single Home Assistant **app** (the new HA term for what used to be
 called an "add-on") running Supertonic as a Wyoming TTS service. The
 whole repo *is* the app. As of **2.0.0** the engine is
 [`supertonic-mnn`](https://github.com/vra/supertonic-mnn) (MNN). The 1.x
-ORT/OpenVINO stack is gone — see `.agents/` before reintroducing any of it.
+ORT/OpenVINO stack is gone; see the Don'ts below before reintroducing it.
 
 ## Repo structure
 
@@ -32,6 +31,7 @@ wyoming_supertonic/
   handler.py     Wyoming events, TTFT log
   engine.py      SupertonicTTS wrapper, MNN config patch, CPU diag, auto-precision
   const.py       voices, language name↔code, defaults
+  normalize.py   number -> words (RBNF), script-based language detection
   ssml.py        SSML -> plain text degradation (see below)
 rootfs/etc/s6-overlay/s6-rc.d/          supertonic (longrun) + discovery (oneshot)
 translations/en.yaml + ko.yaml          option UI strings
@@ -47,10 +47,9 @@ Follow the [Piper app](https://github.com/home-assistant/addons/tree/master/pipe
 | `README.md`        | One-paragraph blurb. Keep tiny. | ~15 lines |
 | `DOCS.md`          | User-facing options + perf table. HA renders it as the "Documentation" tab. | ≤ ~80 lines |
 | `AGENTS.md`        | This file — agent/dev guidance for the *current* code. Symlinked as `CLAUDE.md`. | ~100 lines |
-| `.agents/`           | Local dev decision logs / postmortems / *why* behind changes. **Gitignored** — never link to `.agents/` from the shipped docs (README/DOCS/AGENTS); the link would dangle for end users. | free-form |
 | `translations/<lang>.yaml` | Option UI labels/descriptions. | — |
 
-Rule of thumb when writing docs: **AGENTS = *current state* of the code**, **DOCS = *user-visible knobs***, **`.agents/` = *why* / decision log**. The user-facing `CHANGELOG.md` is not maintained here — it is generated downstream in [`saya6k/ha-apps`](https://github.com/saya6k/ha-apps) from released versions. If a paragraph fits "we considered X and rejected it because Y", it belongs in `.agents/`, not in any shipped file.
+Rule of thumb when writing docs: **AGENTS = *current state* of the code**, **DOCS = *user-visible knobs***. The user-facing `CHANGELOG.md` is not maintained here — it is generated downstream in [`saya6k/ha-apps`](https://github.com/saya6k/ha-apps) from released versions.
 
 ## Engine integration
 
