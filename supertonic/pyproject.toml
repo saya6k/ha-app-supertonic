@@ -13,7 +13,10 @@ authors = [{ name = "ha-supertonic contributors" }]
 keywords = ["home-assistant", "wyoming", "tts", "supertonic", "supertone", "mnn"]
 
 dependencies = [
-    "wyoming>=1.7,<2",
+    # 1.10.1+ is a hard floor, not a preference: __main__.py relies on
+    # AsyncServer owning SIGTERM (added 1.10.1) and handler.py imports
+    # SynthesizeTextFormat (added 1.10.0).
+    "wyoming>=1.10.1,<2",
     "sentence-stream>=1.0.4",
     "numpy",
     # Language-aware number-to-words (CLDR RBNF spellout). Same rule data

@@ -32,6 +32,7 @@ wyoming_supertonic/
   handler.py     Wyoming events, TTFT log
   engine.py      SupertonicTTS wrapper, MNN config patch, CPU diag, auto-precision
   const.py       voices, language name↔code, defaults
+  ssml.py        SSML -> plain text degradation (see below)
 rootfs/etc/s6-overlay/s6-rc.d/          supertonic (longrun) + discovery (oneshot)
 translations/en.yaml + ko.yaml          option UI strings
 DOCS.md / README.md                     user-facing docs (HA renders DOCS.md)
@@ -89,6 +90,15 @@ names → ISO via `resolve_language`) and falls back to `DEFAULT_LANGUAGE`
 only when the client sends none. `__main__._build_info` advertises all
 `LANGUAGES` on every voice so HA knows what's offered.
 
+`text_format` (wyoming 1.10+) is also per-request. Supertonic cannot speak
+SSML and the protocol offers **no** capability flag to decline it — there is
+no SSML field on `TtsProgram`, and the reference HTTP server just forwards
+the value. So when a client declares `ssml` we strip the markup and speak the
+text it wraps (`ssml.py`); prosody hints are dropped rather than honoured.
+In the streaming path a tag can straddle a `SynthesizeChunk` boundary, so the
+tail from an unclosed `<` is carried into the next chunk. Unrecognised
+formats are logged once and treated as plain text.
+
 ## Pins & cache
 
 - `Dockerfile` installs `supertonic-mnn` from a pinned git SHA
@@ -113,7 +123,7 @@ sharing the same deps.
 ```bash
 # one-time
 uv venv .venv --python 3.12
-uv pip install 'wyoming>=1.5,<2' 'sentence-stream>=1.0.4' 'numpy'
+uv pip install 'wyoming>=1.10.1,<2' 'sentence-stream>=1.0.4' 'numpy'
 # note: `supertonic-mnn` is NOT installed locally — it isn't on PyPI
 # and the Dockerfile pulls it from a pinned git SHA. Local venv is for
 # import / syntax / handler.py edits only; engine.py end-to-end testing
@@ -145,6 +155,12 @@ returns `"Supertonic"`.
   pipeline (`Synthesize.voice.language`); a fixed option only drifts from the
   pipeline's choice.
 - Don't pre-download models in the Dockerfile; HF cache works fine.
+- Don't build an SSML interpreter — `ssml.py` deliberately discards markup
+  instead of honouring `<break>`/`<emphasis>`. Speaking the text beats
+  reading tag soup; a real implementation needs engine support first.
+- Don't drop the `wyoming>=1.10.1` floor: `__main__.py` relies on
+  `AsyncServer` owning SIGTERM, and `handler.py` imports
+  `SynthesizeTextFormat`.
 - Don't add `armv7`/`armhf`/`i386` without confirming MNN wheels exist.
 - Don't forget the `chmod +x` block in `Dockerfile` when adding a new s6 script.
 - `icon.png` / `logo.png` are MIT-licensed assets copied from
