@@ -240,13 +240,20 @@ async def main() -> None:
     )
 
     loop = asyncio.get_running_loop()
+    # SIGTERM is owned by wyoming's AsyncServer since 1.10.1: server.run()
+    # installs its own handler that drains the event handlers and closes the
+    # listener, then returns normally. add_signal_handler *replaces*, so
+    # registering SIGTERM here would be silently overwritten anyway. s6 stops
+    # the app with SIGTERM, so that graceful path is the one that matters.
     loop.add_signal_handler(signal.SIGINT, server_task.cancel)
-    loop.add_signal_handler(signal.SIGTERM, server_task.cancel)
 
     try:
         await server_task
     except asyncio.CancelledError:
-        _LOGGER.info("Server stopped")
+        # SIGINT: server.run() re-raises since it did not request the stop.
+        pass
+
+    _LOGGER.info("Server stopped")
 
 
 def run() -> None:
