@@ -24,7 +24,7 @@ import asyncio
 import logging
 import math
 import time
-from typing import Optional
+from typing import Optional, Union
 
 from sentence_stream import SentenceBoundaryDetector
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
@@ -38,13 +38,19 @@ from wyoming.tts import (
     SynthesizeStart,
     SynthesizeStop,
     SynthesizeStopped,
+    SynthesizeTextFormat,
 )
 
 from .const import DEFAULT_LANGUAGE, DEFAULT_VOICE, resolve_language
 from .engine import SupertonicEngine, float_to_pcm16
 from .normalize import TextNormalizer, detect_norm_lang
+from .ssml import split_partial_tag, strip_ssml
 
 _LOGGER = logging.getLogger(__name__)
+
+# `text_format` is a SynthesizeTextFormat for values wyoming knows and a bare
+# string otherwise — the protocol allows "something else".
+TextFormat = Optional[Union[str, SynthesizeTextFormat]]
 
 _WIDTH = 2  # int16
 _CHANNELS = 1
@@ -72,6 +78,23 @@ class SupertonicEventHandler(AsyncEventHandler):
         # Wall-clock at which the current client request arrived. Consumed
         # (and cleared) by the first sentence's first AudioChunk to log TTFT.
         self._request_t0: Optional[float] = None
+        # Set from `text_format` on Synthesize / SynthesizeStart. `_ssml_carry`
+        # holds a tag left dangling at a chunk boundary (see ssml.py).
+        self._is_ssml = False
+        self._ssml_carry = ""
+
+    async def run(self) -> None:
+        # A client that vanishes mid-event (HA restarting, a cancelled
+        # pipeline) makes the base class's `async_read_event` raise out of
+        # `run()` — IncompleteReadError on a clean FIN, ConnectionResetError
+        # on an RST. Unhandled, asyncio logs it as "Task exception was never
+        # retrieved" with a traceback, which reads like a crash in the add-on
+        # log. The base class has already closed the writer in its `finally`,
+        # so there is nothing to clean up; just note it and return.
+        try:
+            await super().run()
+        except (asyncio.IncompleteReadError, ConnectionResetError):
+            _LOGGER.debug("Client disconnected mid-event")
 
     async def handle_event(self, event: Event) -> bool:
         try:
@@ -91,8 +114,12 @@ class SupertonicEventHandler(AsyncEventHandler):
                 synthesize = Synthesize.from_event(event)
                 self._synthesize = Synthesize(text="", voice=synthesize.voice)
                 self.sbd = SentenceBoundaryDetector()
+                # Whole request in one event, so no cross-chunk carry needed.
+                text = self._apply_text_format(
+                    synthesize.text, synthesize.text_format
+                )
                 start_sent = False
-                for i, sentence in enumerate(self.sbd.add_chunk(synthesize.text)):
+                for i, sentence in enumerate(self.sbd.add_chunk(text)):
                     self._synthesize.text = sentence
                     await self._handle_synthesize(
                         self._synthesize,
@@ -122,19 +149,36 @@ class SupertonicEventHandler(AsyncEventHandler):
                 self.sbd = SentenceBoundaryDetector()
                 self._synthesize = Synthesize(text="", voice=stream_start.voice)
                 self._request_t0 = time.monotonic()
+                self._ssml_carry = ""
+                self._note_text_format(stream_start.text_format)
                 _LOGGER.debug("Text stream started: voice=%s", stream_start.voice)
                 return True
 
             if SynthesizeChunk.is_type(event.type):
                 assert self._synthesize is not None
                 stream_chunk = SynthesizeChunk.from_event(event)
-                for sentence in self.sbd.add_chunk(stream_chunk.text):
+                chunk_text = stream_chunk.text
+                if self._is_ssml:
+                    safe, self._ssml_carry = split_partial_tag(
+                        self._ssml_carry + chunk_text
+                    )
+                    chunk_text = strip_ssml(safe)
+                for sentence in self.sbd.add_chunk(chunk_text):
                     self._synthesize.text = sentence
                     await self._handle_synthesize(self._synthesize)
                 return True
 
             if SynthesizeStop.is_type(event.type):
                 assert self._synthesize is not None
+                if self._ssml_carry:
+                    # Unterminated tag at end of stream: keep whatever text
+                    # was inside it rather than dropping the tail silently.
+                    for sentence in self.sbd.add_chunk(
+                        strip_ssml(self._ssml_carry)
+                    ):
+                        self._synthesize.text = sentence
+                        await self._handle_synthesize(self._synthesize)
+                    self._ssml_carry = ""
                 tail = self.sbd.finish()
                 if tail:
                     self._synthesize.text = tail
@@ -148,7 +192,9 @@ class SupertonicEventHandler(AsyncEventHandler):
             _LOGGER.debug("Client disconnected")
             return False
         except Exception as err:
-            _LOGGER.exception("Synthesis error")
+            # This wraps the whole dispatch, not just synthesis — a failed
+            # Describe write reported itself as "Synthesis error" before.
+            _LOGGER.exception("Error handling %s event", event.type)
             try:
                 await self.write_event(
                     Error(text=str(err), code=err.__class__.__name__).event()
@@ -156,6 +202,30 @@ class SupertonicEventHandler(AsyncEventHandler):
             except (ConnectionResetError, BrokenPipeError):
                 pass
             return False
+
+    def _note_text_format(self, text_format: TextFormat) -> None:
+        """Record whether this request carries SSML.
+
+        Anything we do not recognise is treated as plain text — speaking it
+        verbatim is the safer failure than dropping content that only looks
+        like markup.
+        """
+        self._is_ssml = text_format == SynthesizeTextFormat.SSML
+        if (text_format is not None) and not self._is_ssml:
+            if text_format != SynthesizeTextFormat.TEXT:
+                _LOGGER.warning(
+                    "Unknown text_format %r; treating as plain text", text_format
+                )
+
+    def _apply_text_format(self, text: str, text_format: TextFormat) -> str:
+        """Strip markup from a self-contained (non-streamed) request."""
+        self._note_text_format(text_format)
+        if not self._is_ssml:
+            return text
+
+        stripped = strip_ssml(text)
+        _LOGGER.debug("SSML reduced to text: %r", stripped[:60])
+        return stripped
 
     async def _handle_synthesize(
         self,

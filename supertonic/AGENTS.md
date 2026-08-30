@@ -1,7 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents working on this repository. Detailed history
-lives in `.agents/` — read that for the *why* behind older decisions.
+Guidance for AI coding agents working on this repository.
 
 ## What this repo is
 
@@ -9,7 +8,7 @@ A single Home Assistant **app** (the new HA term for what used to be
 called an "add-on") running Supertonic as a Wyoming TTS service. The
 whole repo *is* the app. As of **2.0.0** the engine is
 [`supertonic-mnn`](https://github.com/vra/supertonic-mnn) (MNN). The 1.x
-ORT/OpenVINO stack is gone — see `.agents/` before reintroducing any of it.
+ORT/OpenVINO stack is gone; see the Don'ts below before reintroducing it.
 
 ## Repo structure
 
@@ -32,6 +31,8 @@ wyoming_supertonic/
   handler.py     Wyoming events, TTFT log
   engine.py      SupertonicTTS wrapper, MNN config patch, CPU diag, auto-precision
   const.py       voices, language name↔code, defaults
+  normalize.py   number -> words (RBNF), script-based language detection
+  ssml.py        SSML -> plain text degradation (see below)
 rootfs/etc/s6-overlay/s6-rc.d/          supertonic (longrun) + discovery (oneshot)
 translations/en.yaml + ko.yaml          option UI strings
 DOCS.md / README.md                     user-facing docs (HA renders DOCS.md)
@@ -46,10 +47,9 @@ Follow the [Piper app](https://github.com/home-assistant/addons/tree/master/pipe
 | `README.md`        | One-paragraph blurb. Keep tiny. | ~15 lines |
 | `DOCS.md`          | User-facing options + perf table. HA renders it as the "Documentation" tab. | ≤ ~80 lines |
 | `AGENTS.md`        | This file — agent/dev guidance for the *current* code. Symlinked as `CLAUDE.md`. | ~100 lines |
-| `.agents/`           | Local dev decision logs / postmortems / *why* behind changes. **Gitignored** — never link to `.agents/` from the shipped docs (README/DOCS/AGENTS); the link would dangle for end users. | free-form |
 | `translations/<lang>.yaml` | Option UI labels/descriptions. | — |
 
-Rule of thumb when writing docs: **AGENTS = *current state* of the code**, **DOCS = *user-visible knobs***, **`.agents/` = *why* / decision log**. The user-facing `CHANGELOG.md` is not maintained here — it is generated downstream in [`saya6k/ha-apps`](https://github.com/saya6k/ha-apps) from released versions. If a paragraph fits "we considered X and rejected it because Y", it belongs in `.agents/`, not in any shipped file.
+Rule of thumb when writing docs: **AGENTS = *current state* of the code**, **DOCS = *user-visible knobs***. The user-facing `CHANGELOG.md` is not maintained here — it is generated downstream in [`saya6k/ha-apps`](https://github.com/saya6k/ha-apps) from released versions.
 
 ## Engine integration
 
@@ -89,6 +89,15 @@ names → ISO via `resolve_language`) and falls back to `DEFAULT_LANGUAGE`
 only when the client sends none. `__main__._build_info` advertises all
 `LANGUAGES` on every voice so HA knows what's offered.
 
+`text_format` (wyoming 1.10+) is also per-request. Supertonic cannot speak
+SSML and the protocol offers **no** capability flag to decline it — there is
+no SSML field on `TtsProgram`, and the reference HTTP server just forwards
+the value. So when a client declares `ssml` we strip the markup and speak the
+text it wraps (`ssml.py`); prosody hints are dropped rather than honoured.
+In the streaming path a tag can straddle a `SynthesizeChunk` boundary, so the
+tail from an unclosed `<` is carried into the next chunk. Unrecognised
+formats are logged once and treated as plain text.
+
 ## Pins & cache
 
 - `Dockerfile` installs `supertonic-mnn` from a pinned git SHA
@@ -113,7 +122,7 @@ sharing the same deps.
 ```bash
 # one-time
 uv venv .venv --python 3.12
-uv pip install 'wyoming>=1.5,<2' 'sentence-stream>=1.0.4' 'numpy'
+uv pip install 'wyoming>=1.10.1,<2' 'sentence-stream>=1.0.4' 'numpy'
 # note: `supertonic-mnn` is NOT installed locally — it isn't on PyPI
 # and the Dockerfile pulls it from a pinned git SHA. Local venv is for
 # import / syntax / handler.py edits only; engine.py end-to-end testing
@@ -131,9 +140,16 @@ exact Python the addon ships with.
 
 ## Sanity checks before PR
 
-YAML lint, `shellcheck` the s6 scripts, `python3 -c "import ast; ast.parse(...)"`
-each `*.py`, build for one arch, smoke-test `echo '{"type":"describe"}' | nc -w 1 localhost 10209`
+`.venv/bin/python -m pytest tests/` (CI runs this too, on Python 3.13 to match
+`base-debian:trixie`), YAML lint, `shellcheck` the s6 scripts, build for one
+arch, smoke-test `echo '{"type":"describe"}' | nc -w 1 localhost 10209`
 returns `"Supertonic"`.
+
+Note the `build test` job only runs `docker build`: it installs our package
+with `--no-deps --no-compile` and never imports it, so it catches neither
+syntax nor import errors. The `pytest` job is what actually exercises the
+Python — it resolves deps from `pyproject.toml`, so the version floors there
+have to be real.
 
 ## Don'ts
 
@@ -145,6 +161,12 @@ returns `"Supertonic"`.
   pipeline (`Synthesize.voice.language`); a fixed option only drifts from the
   pipeline's choice.
 - Don't pre-download models in the Dockerfile; HF cache works fine.
+- Don't build an SSML interpreter — `ssml.py` deliberately discards markup
+  instead of honouring `<break>`/`<emphasis>`. Speaking the text beats
+  reading tag soup; a real implementation needs engine support first.
+- Don't drop the `wyoming>=1.10.1` floor: `__main__.py` relies on
+  `AsyncServer` owning SIGTERM, and `handler.py` imports
+  `SynthesizeTextFormat`.
 - Don't add `armv7`/`armhf`/`i386` without confirming MNN wheels exist.
 - Don't forget the `chmod +x` block in `Dockerfile` when adding a new s6 script.
 - `icon.png` / `logo.png` are MIT-licensed assets copied from

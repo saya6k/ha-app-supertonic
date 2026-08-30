@@ -105,6 +105,32 @@ jobs:
             supertonic/DOCS.md
             supertonic/README.md
 
+  test-python:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          # Match the runtime: base-debian:trixie ships Python 3.13.
+          python-version: '3.13'
+      - name: Install dependencies
+        working-directory: supertonic
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # Resolve runtime deps from pyproject.toml so its floors are
+          # actually exercised, minus supertonic-mnn: PyPI carries only
+          # 0.1.3 while the image installs 0.2.0+ from git. engine.py
+          # imports it lazily, so the suite runs without it.
+          python -c "import tomllib; d = tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']; open('/tmp/ci-reqs.txt','w').write(chr(10).join(x for x in d if 'supertonic-mnn' not in x))"
+          cat /tmp/ci-reqs.txt
+          python -m pip install -r /tmp/ci-reqs.txt pytest
+          python -m pip install --no-deps -e .
+      - name: Run tests
+        working-directory: supertonic
+        run: python -m pytest tests/ -q
+
   build-test:
     name: build test (${{ matrix.arch }})
     if: >-
@@ -145,6 +171,7 @@ jobs:
       - lint-shell
       - lint-unicode
       - lint-markdown
+      - test-python
       - build-test
     runs-on: ubuntu-latest
     steps:
@@ -158,6 +185,7 @@ jobs:
             "${{ needs.lint-shell.result }}" \
             "${{ needs.lint-unicode.result }}" \
             "${{ needs.lint-markdown.result }}" \
+            "${{ needs.test-python.result }}" \
             "${{ needs.build-test.result }}"; do
             case "$result" in
               success|skipped) ;;
