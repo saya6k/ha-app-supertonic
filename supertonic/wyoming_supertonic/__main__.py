@@ -204,8 +204,7 @@ async def main() -> None:
         else:
             _LOGGER.info("Warm-up disabled by empty --warmup-voices")
 
-    # One shared normalizer so its per-language RBNF engine cache survives
-    # across client connections.
+    # One shared normalizer across client connections.
     normalizer = TextNormalizer()
     if args.no_text_normalization:
         _LOGGER.info("Number normalization disabled")

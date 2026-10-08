@@ -19,9 +19,10 @@ dependencies = [
     "wyoming>=1.10.1,<2",
     "sentence-stream>=1.0.4",
     "numpy",
-    # Language-aware number-to-words (CLDR RBNF spellout). Same rule data
-    # Piper 2 uses via ICU; covers all 31 Supertonic v3 languages.
-    "unicode-rbnf>=2.0,<3",
+    # Language-aware number-to-words (ICU RBNF spellout); covers all 31
+    # Supertonic v3 languages. 0.2.0 is the floor: earlier wheels bundle
+    # ICU 60 (CLDR 32, 2017), which misspells da/bg/hu/ro/lt/id/ar.
+    "icu-rbnf>=0.2.0,<1",
     # Language detection for number normalization. HA's Wyoming integration
     # does not forward the pipeline language to us, so we detect it from text.
     "langid",

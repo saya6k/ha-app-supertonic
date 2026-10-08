@@ -38,7 +38,7 @@ RUN \
         "git+https://github.com/vra/supertonic-mnn.git@${SUPERTONIC_MNN_REF}" \
         "wyoming==1.10.2" \
         "sentence-stream" \
-        "unicode-rbnf" \
+        "icu-rbnf" \
         "langid" \
         "numpy" \
         "regex" \
