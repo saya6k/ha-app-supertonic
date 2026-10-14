@@ -1,6 +1,6 @@
 """Unit tests for the language-aware number normalizer.
 
-Requires langid + unicode-rbnf; run in the local uv venv without the MNN
+Requires langid + icu-rbnf; run in the local uv venv without the MNN
 engine:  .venv/bin/python -m pytest tests/test_normalize.py
 """
 from wyoming_supertonic import normalize
@@ -50,21 +50,13 @@ def test_version_string_untouched():
     )
 
 
-def test_engine_cached_across_calls():
-    # The RBNF engine cache is module-level (shared across TextNormalizer
-    # instances so the per-language engines survive client connections),
-    # not an instance attribute.
-    normalize._rbnf_engines.clear()
+def test_soft_hyphens_stripped():
+    # ICU joins compound numerals with U+00AD; the model must not see them.
+    assert TextNormalizer().normalize("21 Katzen", "de") == "einundzwanzig Katzen"
 
-    n = TextNormalizer()
-    n.normalize("5", "en")
-    engine = normalize._rbnf_engines["en"]
-    assert engine is not None
 
-    n.normalize("6", "en")
-    # Same object on the second call: the engine is built once, not per call.
-    assert normalize._rbnf_engines["en"] is engine
-    assert set(normalize._rbnf_engines) == {"en"}
+def test_russian_decimal():
+    assert TextNormalizer().normalize("3.5", "ru") == "три целых пять десятых"
 
 
 def _run_stream(chunks, lang="en"):

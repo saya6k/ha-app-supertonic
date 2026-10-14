@@ -4,7 +4,7 @@ Primary: NeMo WFST TN (nemo_text_processing) for supported languages.
 Handles numbers, ordinals, currency, dates, times, units, and more.
 Grammars are pre-compiled at Docker build time to /opt/nemo-cache.
 
-Fallback: unicode-rbnf (CLDR RBNF spellout) for unsupported languages.
+Fallback: icu-rbnf (ICU/CLDR RBNF spellout) for unsupported languages.
 Scope is deliberately narrow: cardinal integers and simple decimals only.
 
 On any failure the original text is returned untouched.
@@ -41,7 +41,7 @@ def _check_nemo() -> bool:
         _LOGGER.info("NeMo TN available — using WFST normalizer for %s", sorted(_NEMO_LANGS))
     except ImportError as exc:
         _nemo_available = False
-        _LOGGER.warning("NeMo TN not available (%s); falling back to unicode-rbnf", exc)
+        _LOGGER.warning("NeMo TN not available (%s); falling back to icu-rbnf", exc)
     return _nemo_available
 
 
@@ -81,11 +81,13 @@ def _nemo_normalize(text: str, lang: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# unicode-rbnf fallback (cardinal integers and simple decimals)
+# icu-rbnf fallback (cardinal integers and simple decimals)
 # ---------------------------------------------------------------------------
 
+import icu_rbnf  # noqa: E402
 import langid  # noqa: E402
-from unicode_rbnf import FormatPurpose, RbnfEngine  # noqa: E402
+
+from .const import LANGUAGES  # noqa: E402
 
 try:
     langid.classify("")
@@ -94,33 +96,25 @@ except Exception:  # noqa: BLE001
 
 _NUMBER_RE = re.compile(r"(?<![A-Za-z0-9.])(-?\d+(?:\.\d+)?)(?![A-Za-z0-9.])")
 
-_rbnf_engines: Dict[str, Optional[RbnfEngine]] = {}
+# ICU falls back to root (English) for a locale it has no rules for, and
+# is_locale_supported() reports True for any locale, so gate on the languages
+# Supertonic actually speaks -- all of which have RBNF rules in ICU 78.
+_RBNF_LANGS = frozenset(LANGUAGES)
 
-
-def _rbnf_engine_for(lang: str) -> Optional[RbnfEngine]:
-    if lang in _rbnf_engines:
-        return _rbnf_engines[lang]
-    try:
-        engine: Optional[RbnfEngine] = RbnfEngine.for_language(lang)
-    except Exception:  # noqa: BLE001
-        _LOGGER.info("No RBNF ruleset for %r; numbers spoken as-is.", lang)
-        engine = None
-    _rbnf_engines[lang] = engine
-    return engine
+# ICU marks compound boundaries with soft hyphens ("ein\xadund\xadzwanzig");
+# they are invisible on screen but are not text the model should see.
+_SOFT_HYPHEN = "\u00ad"
 
 
 def _rbnf_normalize(text: str, lang: str) -> str:
-    if not text or not _NUMBER_RE.search(text):
-        return text
-    engine = _rbnf_engine_for(lang)
-    if engine is None:
+    if not text or lang not in _RBNF_LANGS or not _NUMBER_RE.search(text):
         return text
 
     def _replace(match: "re.Match[str]") -> str:
         token = match.group(1)
         try:
             value = float(token) if "." in token else int(token)
-            return engine.format_number(value, FormatPurpose.CARDINAL).text
+            return icu_rbnf.spellout(value, lang).replace(_SOFT_HYPHEN, "")
         except Exception:  # noqa: BLE001
             return token
 
@@ -144,7 +138,7 @@ class TextNormalizer:
     """Normalize text for TTS.
 
     Uses NeMo WFST TN for supported languages (full sentence normalization),
-    falls back to unicode-rbnf number expansion for the rest.
+    falls back to icu-rbnf number expansion for the rest.
     """
 
     def normalize(self, text: str, lang: str) -> str:
