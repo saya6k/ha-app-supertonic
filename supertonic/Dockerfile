@@ -36,7 +36,7 @@ RUN \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --no-compile \
         "git+https://github.com/vra/supertonic-mnn.git@${SUPERTONIC_MNN_REF}" \
-        "wyoming==1.10.2" \
+        "wyoming==1.11.0" \
         "sentence-stream" \
         "icu-rbnf" \
         "langid" \
