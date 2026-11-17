@@ -43,7 +43,7 @@ from wyoming.tts import (
 
 from .const import DEFAULT_LANGUAGE, DEFAULT_VOICE, resolve_language
 from .engine import SupertonicEngine, float_to_pcm16
-from .normalize import TextNormalizer, detect_norm_lang
+from .normalize import TextNormalizer, detect_norm_lang, engine_lang
 from .ssml import split_partial_tag, strip_ssml
 
 _LOGGER = logging.getLogger(__name__)
@@ -270,13 +270,21 @@ class SupertonicEventHandler(AsyncEventHandler):
             )
             voice_name = self.engine.available_voices[0]
 
+        # Korean text must reach the engine as "ko" even when the pipeline
+        # language fell back to the default — otherwise it is read in English
+        # mode and Latin tokens like "ppm" get slurred.
+        detected = engine_lang(text, language)
+        if detected != language:
+            _LOGGER.debug("Hangul text overrides engine language: %r → %r", language, detected)
+            language = detected
+
         # Number-to-words normalization runs on the full (post-sentence-split)
         # text, *before* auto-punctuation — a trailing "." appended next to a
         # number would otherwise mask it.
         # HA's Wyoming integration never forwards the pipeline language to us
         # (SynthesizeVoice carries only name+speaker), so we detect it from the
-        # text itself. The detected language is used for normalization only;
-        # the engine still receives the pipeline language for synthesis.
+        # text itself. langid's guess is used for normalization only; the
+        # engine gets the pipeline language, or "ko" for Hangul text (above).
         if not self.cli_args.no_text_normalization:
             norm_lang = detect_norm_lang(text) or language
             if norm_lang != language:
