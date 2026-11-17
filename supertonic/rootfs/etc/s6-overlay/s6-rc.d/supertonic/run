@@ -14,6 +14,7 @@ mkdir -p /data/.cache
 # Convert the warmup_voices YAML list (e.g. ["M1", "F1"]) into a
 # comma-separated string for our --warmup-voices CLI flag.
 warmup_voices=$(jq -r '.warmup_voices | join(",")' /data/options.json 2>/dev/null || echo "M1")
+warmup_languages=$(jq -r '(.warmup_languages // []) | join(",")' /data/options.json 2>/dev/null || echo "")
 
 # Advanced knobs are optional in config.yaml's schema — only forward them
 # when the user has actually set a value. Missing values fall through to
@@ -33,4 +34,5 @@ exec python3 -m wyoming_supertonic \
     --steps "$(bashio::config 'steps')" \
     --version "$(bashio::config 'model_version')" \
     --warmup-voices "${warmup_voices}" \
+    --warmup-languages "${warmup_languages}" \
     ${flags[@]}
