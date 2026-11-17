@@ -134,6 +134,23 @@ def detect_norm_lang(text: str) -> Optional[str]:
         return None
 
 
+def _is_hangul(ch: str) -> bool:
+    return "가" <= ch <= "힣" or "ᄀ" <= ch <= "ᇿ" or "㄰" <= ch <= "㆏"
+
+
+def engine_lang(text: str, requested: str) -> str:
+    """Language to hand the engine for *text*.
+
+    HA often sends no pipeline language, so *requested* falls back to the
+    default ("en") and Korean text gets synthesized in English mode. When
+    Hangul makes up most of the letters, the text is Korean regardless.
+    """
+    letters = [ch for ch in text if ch.isalpha()]
+    if letters and sum(map(_is_hangul, letters)) * 2 > len(letters):
+        return "ko"
+    return requested
+
+
 class TextNormalizer:
     """Normalize text for TTS.
 

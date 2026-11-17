@@ -127,3 +127,21 @@ def test_streaming_number_split_across_chunks():
         "I have one thousand two hundred thirty-four apples.",
         "Cost fifty-six point seven now.",
     ]
+
+
+def test_engine_lang_hangul_overrides_default():
+    text = "현재 이산화탄소 농도는 오백 ppm입니다."
+    assert normalize.engine_lang(text, "en") == "ko"
+
+
+def test_engine_lang_english_keeps_requested():
+    assert normalize.engine_lang("CO2 is 500 ppm", "en") == "en"
+
+
+def test_engine_lang_mostly_latin_keeps_requested():
+    # A stray Korean word in an English sentence must not flip the engine.
+    assert normalize.engine_lang("Play the song 아리랑 on Spotify now", "en") == "en"
+
+
+def test_engine_lang_no_letters_keeps_requested():
+    assert normalize.engine_lang("500", "ja") == "ja"
