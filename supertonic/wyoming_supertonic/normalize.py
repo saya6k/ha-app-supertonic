@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -157,6 +157,18 @@ class TextNormalizer:
     Uses NeMo WFST TN for supported languages (full sentence normalization),
     falls back to icu-rbnf number expansion for the rest.
     """
+
+    def preload(self, langs: Iterable[str]) -> None:
+        """Load NeMo grammars for *langs* now so the first request doesn't pay
+        for it. Languages without a NeMo grammar use icu-rbnf, which has no
+        per-language load cost, so they are skipped."""
+        if not _check_nemo():
+            return
+        for lang in langs:
+            if lang in _NEMO_LANGS:
+                _nemo_normalizer_for(lang)
+            else:
+                _LOGGER.info("No NeMo grammar for %r; nothing to preload", lang)
 
     def normalize(self, text: str, lang: str) -> str:
         result = _nemo_normalize(text, lang)

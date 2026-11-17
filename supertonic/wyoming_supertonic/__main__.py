@@ -84,6 +84,14 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--warmup-languages",
+        default="",
+        help=(
+            "Comma-separated languages whose text-normalization grammars are "
+            "loaded at startup (e.g. 'ko,en'). Empty string loads them lazily."
+        ),
+    )
+    parser.add_argument(
         "--samples-per-chunk",
         type=int,
         default=1024,
@@ -208,6 +216,8 @@ async def main() -> None:
     normalizer = TextNormalizer()
     if args.no_text_normalization:
         _LOGGER.info("Number normalization disabled")
+    elif not args.no_warmup:
+        normalizer.preload(_parse_warmup_voices(args.warmup_languages))
 
     wyoming_info = _build_info(__version__)
 

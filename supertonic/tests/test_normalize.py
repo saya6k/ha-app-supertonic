@@ -145,3 +145,19 @@ def test_engine_lang_mostly_latin_keeps_requested():
 
 def test_engine_lang_no_letters_keeps_requested():
     assert normalize.engine_lang("500", "ja") == "ja"
+
+
+def test_preload_loads_only_nemo_languages(monkeypatch):
+    loaded = []
+    monkeypatch.setattr(normalize, "_check_nemo", lambda: True)
+    monkeypatch.setattr(normalize, "_nemo_normalizer_for", loaded.append)
+    TextNormalizer().preload(["ko", "de", "en"])
+    assert loaded == ["ko", "en"]
+
+
+def test_preload_noop_without_nemo(monkeypatch):
+    loaded = []
+    monkeypatch.setattr(normalize, "_check_nemo", lambda: False)
+    monkeypatch.setattr(normalize, "_nemo_normalizer_for", loaded.append)
+    TextNormalizer().preload(["ko"])
+    assert loaded == []
